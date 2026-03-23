@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- | PFL – Main entry-point.
 --   Loads CICIDS2017 benign samples, trains the SimCLR encoder,
@@ -9,22 +9,21 @@ import System.Directory         (doesFileExist)
 import Torch
 
 import DataPipeline             (loadBenignSamples, numFeatures)
-import SimCLR                   (SimCLRModelSpec(..), SimCLRModel(..)
-                                , encodeForward)
+import SimCLR                   (SimCLRModel(..), initSimCLR, encodeForward)
 import Training                 (trainLoop, defaultConfig, TrainConfig(..))
 
 -- | Path to the CICIDS2017 CSV on Google Drive (mounted in Colab).
 defaultCSVPath :: FilePath
 defaultCSVPath = "/content/drive/MyDrive/PFL/cicids2017_cleaned.csv"
 
--- | Where to save the trained encoder weights.
+-- | Where to save the trained model weights.
 weightsPath :: FilePath
 weightsPath = "pfl_encoder_weights.pt"
 
 main :: IO ()
 main = do
   putStrLn "============================================="
-  putStrLn "  PFL – SimCLR Unsupervised NIDS Training"
+  putStrLn "  PFL - SimCLR Unsupervised NIDS Training"
   putStrLn "============================================="
   putStrLn ""
 
@@ -41,30 +40,23 @@ main = do
 
   -- 3. Initialise model
   putStrLn "\n[2/3] Initialising SimCLR model..."
-  let spec = SimCLRModelSpec
-        { smInputDim  = numFeatures   -- 52
-        , smLatentDim = 32
-        , smProjDim   = 16
-        }
-  model0 <- sample spec
-  putStrLn $  "  Encoder:    " ++ show numFeatures ++ " → 128 → 64 → 32"
-  putStrLn    "  Projection: 32 → 16"
-  putStrLn    "  Optimiser:  SGD"
+  model0 <- initSimCLR numFeatures 32 16
+  putStrLn $  "  Encoder:    " ++ show numFeatures ++ " -> 128 -> 64 -> 32"
+  putStrLn    "  Projection: 32 -> 16"
+  putStrLn    "  Optimiser:  GD (Gradient Descent)"
 
   -- 4. Train
   putStrLn "\n[3/3] Training..."
   let config = defaultConfig
         { cfgEpochs    = 20
         , cfgBatchSize = 256
-        , cfgLR        = 1e-3
         }
   trainedModel <- trainLoop config samples model0
 
-  -- 5. Save encoder weights
-  putStrLn "\nSaving encoder weights..."
-  let encoderParams = flattenParameters (smEncoder trainedModel)
-  save encoderParams weightsPath
-  putStrLn $ "✓ Encoder weights saved to: " ++ weightsPath
+  -- 5. Save encoder weights using Hasktorch's saveParams
+  putStrLn "\nSaving model weights..."
+  saveParams trainedModel weightsPath
+  putStrLn $ "  Model saved to: " ++ weightsPath
 
   -- 6. Done
   putStrLn ""
@@ -72,8 +64,8 @@ main = do
   putStrLn "  Training complete!"
   putStrLn ""
   putStrLn "  To use the encoder for anomaly detection:"
-  putStrLn "    1. Load the weights with  Torch.load"
+  putStrLn "    1. Load weights with loadParams"
   putStrLn "    2. Feed new traffic through encodeForward"
-  putStrLn "    3. Compute the reconstruction / distance score"
-  putStrLn "    4. Samples far from the benign cluster = anomalies"
+  putStrLn "    3. Compute distance from benign cluster centroid"
+  putStrLn "    4. Samples far from centroid = anomalies"
   putStrLn "============================================="

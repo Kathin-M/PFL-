@@ -1,18 +1,18 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 
 -- | SimCLR model components:
---     • MLP Encoder  (52 → 128 → 64 → 32)
---     • Projection head (32 → 16)
+--     * MLP Encoder  (52 -> 128 -> 64 -> 32)
+--     * Projection head (32 -> 16)
 module SimCLR
-  ( EncoderSpec(..)
-  , Encoder(..)
-  , ProjectionSpec(..)
+  ( Encoder(..)
   , Projection(..)
-  , SimCLRModelSpec(..)
   , SimCLRModel(..)
+  , initSimCLR
   , encodeForward
   , projectForward
   , simclrForward
@@ -22,52 +22,39 @@ import GHC.Generics            (Generic)
 import Torch
 
 -- ================================================================
---  Encoder: 3-layer MLP  (inputDim → 128 → 64 → latentDim=32)
+--  Encoder: 3-layer MLP  (inputDim -> 128 -> 64 -> latentDim=32)
 -- ================================================================
 
-data EncoderSpec = EncoderSpec
-  { encInputDim  :: !Int   -- ^ e.g. 52
-  , encLatentDim :: !Int   -- ^ e.g. 32
-  } deriving (Show, Eq)
-
 data Encoder = Encoder
-  { encW1 :: !Linear
-  , encW2 :: !Linear
-  , encW3 :: !Linear
+  { encW1 :: Linear
+  , encW2 :: Linear
+  , encW3 :: Linear
   } deriving (Generic, Show, Parameterized)
 
-instance Randomizable EncoderSpec Encoder where
-  sample EncoderSpec{..} = Encoder
-    <$> sample (LinearSpec encInputDim  128)
-    <*> sample (LinearSpec 128          64 )
-    <*> sample (LinearSpec 64           encLatentDim)
+initEncoder :: Int -> Int -> IO Encoder
+initEncoder inputDim latentDim = do
+  w1 <- sample $ LinearSpec { in_features = inputDim,  out_features = 128 }
+  w2 <- sample $ LinearSpec { in_features = 128,       out_features = 64  }
+  w3 <- sample $ LinearSpec { in_features = 64,        out_features = latentDim }
+  return $ Encoder w1 w2 w3
 
 -- | Forward pass through the encoder.
 encodeForward :: Encoder -> Tensor -> Tensor
 encodeForward Encoder{..} x =
-  linear encW3
-    . relu
-    . linear encW2
-    . relu
-    . linear encW1
-    $ x
+    relu (linear encW3 (relu (linear encW2 (relu (linear encW1 x)))))
 
 -- ================================================================
---  Projection Head: linear  (latentDim → projDim=16)
+--  Projection Head: linear  (latentDim -> projDim=16)
 -- ================================================================
-
-data ProjectionSpec = ProjectionSpec
-  { projInputDim  :: !Int  -- ^ e.g. 32
-  , projOutputDim :: !Int  -- ^ e.g. 16
-  } deriving (Show, Eq)
 
 data Projection = Projection
-  { projW :: !Linear
+  { projW :: Linear
   } deriving (Generic, Show, Parameterized)
 
-instance Randomizable ProjectionSpec Projection where
-  sample ProjectionSpec{..} = Projection
-    <$> sample (LinearSpec projInputDim projOutputDim)
+initProjection :: Int -> Int -> IO Projection
+initProjection inDim outDim = do
+  w <- sample $ LinearSpec { in_features = inDim, out_features = outDim }
+  return $ Projection w
 
 -- | Forward pass through the projection head.
 projectForward :: Projection -> Tensor -> Tensor
@@ -77,23 +64,19 @@ projectForward Projection{..} z = linear projW z
 --  Combined SimCLR model (Encoder + Projection)
 -- ================================================================
 
-data SimCLRModelSpec = SimCLRModelSpec
-  { smInputDim  :: !Int   -- ^ 52
-  , smLatentDim :: !Int   -- ^ 32
-  , smProjDim   :: !Int   -- ^ 16
-  } deriving (Show, Eq)
-
 data SimCLRModel = SimCLRModel
-  { smEncoder    :: !Encoder
-  , smProjection :: !Projection
+  { smEncoder    :: Encoder
+  , smProjection :: Projection
   } deriving (Generic, Show, Parameterized)
 
-instance Randomizable SimCLRModelSpec SimCLRModel where
-  sample SimCLRModelSpec{..} = SimCLRModel
-    <$> sample (EncoderSpec smInputDim smLatentDim)
-    <*> sample (ProjectionSpec smLatentDim smProjDim)
+-- | Create a fresh randomly-initialised SimCLR model.
+initSimCLR :: Int -> Int -> Int -> IO SimCLRModel
+initSimCLR inputDim latentDim projDim = do
+  enc  <- initEncoder inputDim latentDim
+  proj <- initProjection latentDim projDim
+  return $ SimCLRModel enc proj
 
--- | Full forward: input → encoder → projection.
+-- | Full forward: input -> encoder -> projection.
 --   Returns the projection-space embedding (used for NT-Xent).
 simclrForward :: SimCLRModel -> Tensor -> Tensor
 simclrForward SimCLRModel{..} x =
