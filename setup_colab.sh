@@ -9,8 +9,8 @@ echo "=============================="
 echo " [1/5] Installing GHCup + GHC 9.2.8 + Cabal 3.6"
 echo "=============================="
 export BOOTSTRAP_HASKELL_NONINTERACTIVE=1
-export BOOTSTRAP_HASKELL_GHC_VERSION=9.2.8
-export BOOTSTRAP_HASKELL_CABAL_VERSION=3.6.2.0
+export BOOTSTRAP_HASKELL_GHC_VERSION=9.6.6
+export BOOTSTRAP_HASKELL_CABAL_VERSION=3.10.3.0
 export BOOTSTRAP_HASKELL_ADJUST_BASHRC=1
 
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
@@ -25,9 +25,9 @@ echo "Cabal version: $(cabal --version | head -1)"
 
 echo ""
 echo "=============================="
-echo " [2/5] Downloading Libtorch 1.11.0 (CPU, cxx11-abi, shared)"
+echo " [2/5] Downloading Libtorch 2.0.1 (CPU, cxx11-abi, shared)"
 echo "=============================="
-LIBTORCH_URL="https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-1.11.0%2Bcpu.zip"
+LIBTORCH_URL="https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcpu.zip"
 LIBTORCH_DIR="/usr/local/libtorch"
 
 if [ ! -d "$LIBTORCH_DIR/lib" ]; then
