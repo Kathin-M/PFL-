@@ -6,7 +6,15 @@
 set -euo pipefail
 
 echo "=============================="
-echo " [1/5] Installing GHCup + GHC 9.2.8 + Cabal 3.6"
+echo " [0/5] Installing system dependencies"
+echo "=============================="
+apt-get update -qq
+apt-get install -y -qq libgmp-dev libnuma-dev zlib1g-dev libffi-dev > /dev/null 2>&1
+echo "System deps installed."
+
+echo ""
+echo "=============================="
+echo " [1/5] Installing GHCup + GHC 9.6.6 + Cabal 3.10"
 echo "=============================="
 export BOOTSTRAP_HASKELL_NONINTERACTIVE=1
 export BOOTSTRAP_HASKELL_GHC_VERSION=9.6.6
