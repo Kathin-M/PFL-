@@ -72,7 +72,8 @@ export LIBRARY_PATH="/usr/local/libtorch/lib:${LIBRARY_PATH:-}"
 source "$HOME/.ghcup/env" 2>/dev/null || true
 EOF
 
-# Update the dynamic linker cache
+# Register libtorch with the system dynamic linker
+echo "/usr/local/libtorch/lib" > /etc/ld.so.conf.d/libtorch.conf
 ldconfig
 
 echo "LD_LIBRARY_PATH = $LD_LIBRARY_PATH"
