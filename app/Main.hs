@@ -8,13 +8,15 @@ module Main where
 import System.Directory         (doesFileExist)
 import Torch
 
-import DataPipeline             (loadBenignSamples, numFeatures)
+import DataPipeline             (loadBenignSamples)
+import qualified DataPipeline   as DP
 import SimCLR                   (SimCLRModel(..), initSimCLR, encodeForward)
 import Training                 (trainLoop, defaultConfig, TrainConfig(..))
+import Evaluation               (evaluateModel)
 
--- | Path to the CICIDS2017 CSV on Google Drive (mounted in Colab).
+-- | Path to the local CICIDS2017 CSV.
 defaultCSVPath :: FilePath
-defaultCSVPath = "/content/drive/MyDrive/PFL/cicids2017_cleaned.csv"
+defaultCSVPath = "cicids2017_cleaned.csv"
 
 -- | Where to save the trained model weights.
 weightsPath :: FilePath
@@ -40,8 +42,8 @@ main = do
 
   -- 3. Initialise model
   putStrLn "\n[2/3] Initialising SimCLR model..."
-  model0 <- initSimCLR numFeatures 32 16
-  putStrLn $  "  Encoder:    " ++ show numFeatures ++ " -> 128 -> 64 -> 32"
+  model0 <- initSimCLR DP.numFeatures 32 16
+  putStrLn $  "  Encoder:    " ++ show DP.numFeatures ++ " -> 128 -> 64 -> 32"
   putStrLn    "  Projection: 32 -> 16"
   putStrLn    "  Optimiser:  GD (Gradient Descent)"
 
@@ -66,6 +68,9 @@ main = do
   putStrLn "  To use the encoder for anomaly detection:"
   putStrLn "    1. Load weights with loadParams"
   putStrLn "    2. Feed new traffic through encodeForward"
-  putStrLn "    3. Compute distance from benign cluster centroid"
-  putStrLn "    4. Samples far from centroid = anomalies"
+  putStrLn "  4. Samples far from centroid = anomalies"
   putStrLn "============================================="
+
+  -- 7. Evaluate Model
+  -- We set a normalized distance threshold of 0.91 (between Benign 0.83 and Anomaly 0.99)
+  evaluateModel defaultCSVPath trainedModel 0.91

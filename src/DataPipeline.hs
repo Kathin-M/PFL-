@@ -1,11 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns #-}
+
 
 -- | Data pipeline for CICIDS2017.
 --   Parses the CSV, filters for "Normal Traffic", and
 --   provides augmentation helpers for SimCLR.
 module DataPipeline
   ( loadBenignSamples
+  , parseAnyRow
   , augmentPair
   , batchTensor
   , numFeatures
@@ -13,18 +16,20 @@ module DataPipeline
 
 import qualified Data.ByteString.Lazy  as BL
 import qualified Data.Csv              as Csv
+import qualified Data.Csv.Streaming    as CsvS
 import qualified Data.Vector           as V
 import qualified Data.HashMap.Strict   as HM
 import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Char8 as BS8
 import           Data.Maybe            (mapMaybe)
+import           Control.Applicative   ((<|>))
 import           System.Random         (randomRIO)
 
 import           Torch                 (Tensor, asTensor)
 
 -- | Number of numeric feature columns in the cleaned CSV.
 numFeatures :: Int
-numFeatures = 52
+numFeatures = 51
 
 -- ------------------------------------------------------------------
 --  Feature column names (in order)
@@ -32,7 +37,7 @@ numFeatures = 52
 
 featureColumns :: [BS.ByteString]
 featureColumns =
-  [ "Destination Port", "Flow Duration"
+  [ "Flow Duration"
   , "Total Fwd Packets", "Total Length of Fwd Packets"
   , "Fwd Packet Length Max", "Fwd Packet Length Min"
   , "Fwd Packet Length Mean", "Fwd Packet Length Std"
@@ -79,11 +84,17 @@ parseFloat bs =
 --   Returns Nothing if the row is not "Normal Traffic".
 parseRow :: Csv.NamedRecord -> Maybe [Float]
 parseRow nr = do
-  labelBs <- HM.lookup "Attack Type" nr
+  (fs, isAnomaly) <- parseAnyRow nr
+  if isAnomaly then Nothing else Just fs
+
+-- | Parse any CSV row into features and a boolean indicating if it's an anomaly.
+parseAnyRow :: Csv.NamedRecord -> Maybe ([Float], Bool)
+parseAnyRow nr = do
+  labelBs <- HM.lookup "Label" nr <|> HM.lookup "Attack Type" nr
   let label = BS8.strip labelBs
-  if label /= "Normal Traffic"
-    then Nothing
-    else Just $ map (\col -> maybe 0.0 parseFloat (HM.lookup col nr)) featureColumns
+      isAnomaly = label /= "BENIGN" && label /= "Normal Traffic"
+  let fs = map (\col -> maybe 0.0 parseFloat (HM.lookup col nr)) featureColumns
+  return (fs, isAnomaly)
 
 -- ------------------------------------------------------------------
 --  Loading + filtering
@@ -94,11 +105,21 @@ parseRow nr = do
 loadBenignSamples :: FilePath -> IO (V.Vector [Float])
 loadBenignSamples fp = do
   raw <- BL.readFile fp
-  case Csv.decodeByName raw of
+  case CsvS.decodeByName raw of
     Left err   -> error $ "CSV parse error: " ++ err
-    Right (_hdr, rows :: V.Vector Csv.NamedRecord) ->
-      let benign = mapMaybe parseRow (V.toList rows)
-          !v     = V.fromList benign
+    Right (_hdr, stream) ->
+      let 
+          extract :: CsvS.Records Csv.NamedRecord -> [[Float]]
+          extract (CsvS.Cons (Right nr) rs)
+            | Just fs <- parseRow nr = fs : extract rs
+            | otherwise              = extract rs
+          extract (CsvS.Cons (Left _) rs) = extract rs
+          extract (CsvS.Nil _ _) = []
+          
+          -- Limit to 50k samples for immediate local training to avoid OOM
+          limit = 50000
+          benignList = take limit (extract stream)
+          !v     = V.fromList benignList
       in do
         putStrLn $ "Loaded " ++ show (V.length v)
                    ++ " benign samples (" ++ show numFeatures ++ " features each)"

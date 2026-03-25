@@ -1,0 +1,16 @@
+# Haskell / Cabal
+dist-newstyle/
+.ghc.environment.*
+cabal.project.local
+*~
+
+# Data
+*.csv
+*.pt
+cicids2017_cleaned.csv
+pfl_encoder_weights.pt
+
+# Jupyter / Checkpoints
+.ipynb_checkpoints/
+__pycache__/
+*.ipynb

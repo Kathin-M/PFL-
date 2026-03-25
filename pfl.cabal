@@ -27,11 +27,20 @@ library
     DataPipeline
     SimCLR
     Training
+    Evaluation
 
 executable pfl-train
   import:           common-opts
   hs-source-dirs:   app
   main-is:          Main.hs
+  build-depends:
+    , pfl
+  ghc-options:      -threaded -rtsopts "-with-rtsopts=-N -A64m"
+
+executable pfl-eval
+  import:           common-opts
+  hs-source-dirs:   app
+  main-is:          Evaluate.hs
   build-depends:
     , pfl
   ghc-options:      -threaded -rtsopts "-with-rtsopts=-N -A64m"

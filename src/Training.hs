@@ -19,7 +19,8 @@ import           Text.Printf        (printf)
 
 import           Torch
 
-import           DataPipeline       (augmentPair, batchTensor, numFeatures)
+import           DataPipeline       (augmentPair, batchTensor)
+import qualified DataPipeline       as DP
 import           SimCLR             (SimCLRModel(..), simclrForward)
 
 -- ================================================================
@@ -42,7 +43,7 @@ defaultConfig = TrainConfig
   , cfgBatchSize   = 256
   , cfgLR          = asTensor (1e-3 :: Float)
   , cfgTemperature = 0.5
-  , cfgInputDim    = numFeatures   -- 52
+  , cfgInputDim    = DP.numFeatures   -- 52
   , cfgLatentDim   = 32
   , cfgProjDim     = 16
   }
@@ -52,11 +53,6 @@ defaultConfig = TrainConfig
 -- ================================================================
 
 -- | Compute the NT-Xent contrastive loss.
---
---   @z1@ and @z2@ are [B, D] tensors (two augmented views).
---
---   For each sample i, the positive pair is (z1_i, z2_i).
---   We compute cosine similarity and use cross-entropy style loss.
 ntXentLoss :: Float -> Tensor -> Tensor -> Tensor
 ntXentLoss temperature z1 z2 =
   let
@@ -68,13 +64,20 @@ ntXentLoss temperature z1 z2 =
     simMatrix = matmul z1n (Torch.transpose (Dim 0) (Dim 1) z2n)
                   / asTensor temperature
 
-    -- The positive pairs are on the diagonal
-    -- Use cross-entropy: each row's target is the diagonal (i.e., label = i)
+    -- The positive pairs are exactly on the diagonal
+    logProbs = logSoftmax (Dim 1) simMatrix
+    
     batchSize = head (shape z1)
-    labels = asTensor [0 .. (fromIntegral batchSize - 1) :: Int]
-
-    -- Cross-entropy loss over the similarity matrix
-    loss = nllLoss' labels (logSoftmax (Dim 1) simMatrix)
+    
+    -- Identity masking to extract the diagonal safely without using typeclass-heavy bounds
+    identityMask = asTensor [ [ if i == j then (1.0 :: Float) else 0.0 | j <- [1..batchSize] ] 
+                            | i <- [1..batchSize] ]
+    
+    -- Element-wise multiply clears off-diagonals, then sum over all elements
+    sumPositives = sumAll (logProbs * identityMask)
+    
+    -- Cross-entropy is the negative mean of the log probabilities of the true classes (the diagonal)
+    loss = -(sumPositives) / asTensor (fromIntegral batchSize :: Float)
   in loss
 
 -- | L2 normalize each row of a 2D tensor
@@ -111,7 +114,7 @@ trainLoop cfg@TrainConfig{..} samples model0 = do
   putStrLn ""
 
   let n          = V.length samples
-      numBatches = max 1 (n `div` cfgBatchSize)
+      numBatches = Prelude.max 1 (n `Prelude.div` cfgBatchSize)
 
   -- Training loop using foldLoop from Hasktorch
   (finalModel, _) <- foldLoop (model0, 0 :: Int) cfgEpochs $ \(model, _) epoch -> do
